@@ -130,25 +130,37 @@ export const VoiceProvider = ({ children }: { children: ReactNode }) => {
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     recognitionRef.current = new SpeechRecognition();
-    recognitionRef.current.continuous = true; // Set to true to keep mic hot
-    recognitionRef.current.interimResults = false;
+    recognitionRef.current.continuous = false; // Set to false for faster silence detection (snappy response)
+    recognitionRef.current.interimResults = true; // Get interim results to cut off AI instantly
     
     // Attempt to hint browser for AEC & Noise Suppression (non-standard but supported in some forks)
     recognitionRef.current.echoCancellation = true;
     recognitionRef.current.noiseSuppression = true;
 
     recognitionRef.current.onresult = (event: any) => {
-      // Get the latest result
-      const last = event.results.length - 1;
-      const transcript = event.results[last][0].transcript;
+      let interimTranscript = '';
+      let finalTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        } else {
+          interimTranscript += event.results[i][0].transcript;
+        }
+      }
       
-      if (transcript.trim()) {
-        // FULL DUPLEX INTERRUPTION: If the AI is speaking and the user talks, immediately cut the AI off.
+      const currentText = finalTranscript || interimTranscript;
+      
+      if (currentText.trim()) {
+        // FULL DUPLEX INTERRUPTION: Instantly cut off AI even on interim results!
         if (synthRef.current && synthRef.current.speaking) {
           synthRef.current.cancel();
           setVoiceState('interrupted');
         }
-        handleVoiceInput(transcript);
+      }
+
+      if (finalTranscript.trim()) {
+        handleVoiceInput(finalTranscript);
       }
     };
     
